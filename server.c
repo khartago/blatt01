@@ -1,9 +1,3 @@
-//
-// Created by tkn on 11/24/20.
-//
-
-#include <stdio.h>
-#include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -12,6 +6,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <signal.h>
 
 #define MAXDATASIZE 512
 
@@ -43,7 +38,7 @@ int main (int argc, char **argv[]){
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE; // use the IP
 
-    if (status= getaddrinfo(NULL, argv[1], &servaddr, &res)!=0) // argv[1] = PORT
+    if (status= getaddrinfo(NULL, argv[1], &hints, &res)!=0) // argv[1] = PORT
     {
         fprintf(stderr, "getassrinfo: %s\n", gai_strerror(status));
         return 1;
@@ -57,10 +52,10 @@ int main (int argc, char **argv[]){
             continue;
         }
 
-        if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int) )== -1){
-        close(sockfd);
-        perror("setsockpot");
-        exit(1);}
+        if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &res, sizeof(int) )== -1){
+            close(sockfd);
+            perror("setsockpot");
+            exit(1);}
 
         if( bind(sockfd, p->ai_addr, p->ai_addrlen) == -1){
             close(sockfd);
@@ -102,16 +97,16 @@ int main (int argc, char **argv[]){
         fopen(argv[2], "r");
         int bytes_read= getline(buf, MAXDATASIZE , pFile);
         if (bytes_read == -1){
-           perror("getline");
+            perror("getline");
         }
         fclose(pFile);
 
-       // Send the data in new socket
+        // Send the data in new socket
         if (send(sockfd, buf, sizeof(char)*MAXDATASIZE, 0) == -1 ){
             perror("send");}
 
-       // close
-       close(sockfd);
+        // close
+        close(sockfd);
     }
 
     return 0;
