@@ -102,12 +102,13 @@ int main (int argc, char **argv[]){
         fopen(argv[2], "r");
         int bytes_read= getline(buf, MAXDATASIZE , pFile);
         if (bytes_read == -1){
-            printf("getline error");
+           perror("getline");
         }
         fclose(pFile);
 
        // Send the data in new socket
-        send(sockfd, buf, sizeof(char)*MAXDATASIZE, 0);
+        if (send(sockfd, buf, sizeof(char)*MAXDATASIZE, 0) == -1 ){
+            perror("send");}
 
        // close
        close(sockfd);
