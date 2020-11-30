@@ -106,7 +106,9 @@ int main (int argc, char *argv[]){
             exit(1)
         }
         //Print the data
-        write(buf, sizeof(char), MAXDATASIZE);
+      if(int w= write(buf, sizeof(char), MAXDATASIZE)) == -1)
+          printf(" write fail");
+        exit(2);
     }
     // close the socket
     close(sockfd);
