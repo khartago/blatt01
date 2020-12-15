@@ -1,120 +1,159 @@
 //
-// Created by tkn on 11/24/20.
+// Created by tkn on 12/11/20.
 //
-
 #include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include "Protokoll.h"
 
-#define MAXDATASIZE 512
+static char *
+read_stdin (void)
+{
+  size_t cap = 4096, /* Initial capacity for the char buffer */
+         len =    0; /* Current offset of the buffer */
+  char *buffer = malloc(cap * sizeof (char));
+  int c;
 
-void *get_in_addr( struct sockaddr* sa){
-    if (sa->sa_family == AF_INET){
-        return & (((struct sockaddr_in *)sa)->sin_addr);
+  /* Read char by char, breaking if we reach EOF or a newline */
+  while ((c = fgetc(stdin)) != '\n' && !feof(stdin))
+    {
+      buffer[len] = c;
+
+      /* When cap == len, we need to resize the buffer
+       * so that we don't overwrite any bytes
+       */
+      if (++len == cap)
+        /* Make the output buffer twice its current size */
+        buffer = realloc(buffer, (cap *= 2) * sizeof (char));
     }
-    return &(((struct sockaddr_in6 *)sa)->sin6_addr);
+
+  /* Trim off any unused bytes from the buffer */
+  buffer = realloc(buffer, (len + 1) * sizeof (char));
+
+  /* Pad the last byte so we don't overread the buffer in the future */
+  buffer[len] = '\0';
+
+  return buffer;
 }
-
-
-int main (int argc, char *argv[]){
-
-    int sockfd, nbbytes;
-    char buf [MAXDATASIZE];
-    struct addrinfo hints, *res, *p;
-    int status;
-    char s [INET6_ADDRSTRLEN];
-
-
-// Usage check
-    if (argc != 3) {
-        fprintf(stderr, "usage:Client hostname \n");
-        exit(1);
-    }
-
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-
-
-// IP Adress save or hostname to IP adress transformation
-
-    for  (p=res; p !=NULL; p= p->ai_next){
-
-        if (p->ai_family == AF_INET){
-            void *addr;
-            struct addrinfo p = res;
-
-            struct sockaddr_in *ipv4 = (struct sockaddr_in *) p->ai_addr;
-            addr = &(ipv4->sin_addr);
-
-        }else if (p->ai_family == AF_INET6){
-            struct sockaddr_in *ipv6 = (struct sockaddr_in6 *) p->ai_addr;
-            addr = &(ipv6->sin6_addr);
-
-        }
-    }
-    freeaddrinfo(res);
-
-    argv[1]= (*addr);
-
-    // Get Server info
-
-    if (status= getaddrinfo(argv[1], argv[2], &servaddr, &res)!=0) // argv[2] = PORT
-        {
-        fprintf(stderr, "getassrinfo: %s\n", gai_strerror(status));
+int main(int argc, char** argv) {
+    if (argc < 5) {
+        fprintf(stderr, "%s\n", "No enough args provided!");
         return 1;
     }
 
-    // Loop through all the results
-    for (p = res ; p != NULL; p=p->ai_next){
-        // Create the socket
-    if ((sockfd= socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1 ){
-        perror ("client: socket");
-        continue;
+    char *host = argv[1];
+    char *service = argv[2];
+    char *Header = argv[3];
+
+
+    struct addrinfo hints;
+    struct addrinfo *res;
+    struct addrinfo *p;
+
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE;
+
+
+    int status = getaddrinfo(host, service, &hints, &res);
+    if (status != 0) {
+        fprintf(stderr, "%s\n", "getaddrinfo() failed!");
+        return 1;
     }
-    // Connect the socket
-    if( connect( sockfd, p->ai_addr, p->ai_addrlen) ==-1 ){
-        close(sockfd);
-        perror("client:connect");
-        continue;
-    }
-    break;
 
-}
-    if (p == NULL){
-    fprintf(stderr, "Client : failed to connect \n");
-        return 2;}
-
-    // converts ipv4 or ipv6 from binary to a string
-    inet_ntop(p->ai_family, getaddrinfo((struct sockaddr *)p->ai_addr), s, sizeof(s));
-    printf(" Client connecting to %s\n", s);
-    //
-
-    freeaddrinfo(res);
-
-    // recieve the Data
-    while (recv(sockfd, buf, MAXDATASIZE-1, 0) != 0) {
-        if ((nbbytes = recv(sockfd, buf, MAXDATASIZE - 1, 0)) == -1) {
-            perror("recv fail ");
-            exit(1)
+    int s = -1;
+    for (p = res; p != NULL; p = p->ai_next) {
+        s = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
+        if (s == -1) {
+            continue;
         }
-        //Print the data
-        if ((int w = write(buf, sizeof(char), MAXDATASIZE)) ==-1){
-            perror("write fail");
-            exit(2);
+
+
+        status = connect(s, p->ai_addr, p->ai_addrlen);
+        if (status != 0) {
+            fprintf(stderr, "%s\n", "connect() failed!");
+            continue;
         }
     }
-    // close the socket
-    close(sockfd);
+
+    if (s == -1) {
+        fprintf(stderr, "%s\n", "socket() failed!");
+        return 1;
+    }
+
+    if (status != 0) return 1;
+
+
+    fprintf(stderr, "Connected to %s:%s\n", host, service);
+    //break;
+
+
+
+// Send the header
+    Protocol *protocol = malloc(sizeof(Protocol));
+    protocol->header.key_length = strlen(argv[4]);
+    protocol->key = argv[4];
+
+    int read;
+    char* buff=NULL;
+
+    if (strcmp(Header, "DELETE") == 0) {
+        protocol->header.flags = FlagDelete;
+    } else if (strcmp(Header, "SET") == 0) {
+        protocol->header.flags = FlagSet;
+        unsigned int chars_read;
+        //fgets(buff,sizeof(buff),stdin);
+        buff=read_stdin();
+        protocol->header.value_length = strlen(buff);
+        buff[protocol->header.value_length] = 0;
+        protocol->header.value_length = protocol->header.value_length;
+        protocol->value=buff;
+    } else if (strcmp(Header, "GET") == 0) {
+        protocol->header.flags = FlagGet;
+    } else {
+        perror("unvalid Operation");
+    }
+    char marshalled[1500];
+    int size = marshalling(protocol, marshalled);
+    int nb_bytes_sent = send(s, marshalled, size, 0);
+    if (nb_bytes_sent < 0) {
+        perror("send error");
+        exit(0);
+    }
+
+    Protocol *protocol2 = malloc(sizeof(Protocol)); // Memory allocation for HTTP request
+
+    unmarshalling(s, protocol2); // Unzip the information in the client's Socket
+
+    if((protocol2->header.flags & FlagAck)!=0)
+        printf("ACK: 1\n");
+    else
+        printf("ACK: 0\n");
+    if((protocol2->header.flags & FlagGet)!=0)
+    printf("GET: 1\n");
+    else
+    printf("GET: 0\n");
+    if((protocol2->header.flags & FlagSet)!=0)
+    printf("GET: 1\n");
+    else
+    printf("GET: 0\n");
+    if((protocol2->header.flags & FlagDelete)!=0)
+    printf("DEL: 1\n");
+    else
+    printf("DEL: 0\n");
+    printf("Key Length: %d\n",protocol2->header.key_length);
+    printf("Value Length: %d\n",protocol2->header.value_length);
+
+    if (protocol->header.flags & FlagGet) {
+        fwrite(protocol2->value, sizeof(char), protocol2->header.value_length, stdout);
+        printf("\n");
+    }
+
+    if(buff!=NULL)
+        free(buff);
     return 0;
 }
-
-
-
